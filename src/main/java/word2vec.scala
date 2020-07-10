@@ -1,13 +1,14 @@
 import java.io.StringReader
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.ml.classification.NaiveBayes
+import org.apache.spark.ml.feature.Word2Vec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.wltea.analyzer.core.IKSegmenter
+
 import scala.collection.mutable.ListBuffer
 
-object categories {
+object word2vec {
   def main(args: Array[String]): Unit = {
     // 去除日志
     Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
@@ -24,17 +25,28 @@ object categories {
     // 进行分词
     val splitText = textFile.map(line => fit(line)).zipWithIndex()
     //splitText.foreach(println)
-    val data = ss.createDataFrame(splitText).toDF("features","id")
-    // 将60%作为训练集，将40%作为测试集
-    val splits = data.randomSplit(Array(0.6,0.4),seed=11L)
-    val traing = splits(0)
-    val test = splits(1)
+    val data = ss.createDataFrame(splitText).toDF("content","id")
+    //data.show(10,false)
+    // 实例化一个word2vec对象，维度为3，mincount为词出现5词才进行向量化
+    val word2vec = new Word2Vec()
+      .setInputCol("content")
+      .setOutputCol("result")
+      .setVectorSize(3)
+      .setMinCount(5)
 
-    //traing.show(10,false)
-    val model = new NaiveBayes().fit(traing)
+    val model = word2vec.fit(data)
+    model.getVectors.show(10,false)
+    // 显示与质量相近的十个词
+    model.findSynonyms("质量",10).show(false)
+    // 将如下几个词利用训练好的model，转换为向量
+    val testdata = ss.createDataFrame(Seq(
+      (List("我","可观","室友","光明"),0),
+      (List("人们","游戏","生物"),1),
+      (List("画质","精细","期待"),2)
+    )).toDF("content","id")
+    val result = model.transform(testdata)
+    result.show(false)
 
-    val predictions = model.transform(test)
-    predictions.show()
   }
   // 分词
   def fit(text: String): List[String] = {
